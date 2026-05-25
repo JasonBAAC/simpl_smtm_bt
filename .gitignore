@@ -30,6 +30,7 @@ build/
 *.env
 
 # 로그 파일
+log/
 *.log
 
 # DB 파일
