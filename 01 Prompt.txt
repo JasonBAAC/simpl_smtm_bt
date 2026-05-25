@@ -1,0 +1,113 @@
+컴퓨터를 이용하여 가상화폐를 자동거래하는 프로젝트를 구현하려고 해. 다음의 내용을 참고하여 PRD를 작성해줘.
+
+ㅇ 큰 기능단위는 data provider, strategy, trader, analyzer와 operator로 구성
+
+ㅇ argument를 통해 여러 mode를 설정. 시뮬레이션 vs 실제 거래, API 수신 데이터의 DB 저장 여부, 거래종목 수, 투입금액 등을 결정
+
+ㅇ 거래소는 bithumb 으로만 한정. pybithumb 패키지를 통한 데이터 송수신
+
+[0] 단계별 진행 상황은 모두 logging
+
+[1] data provider에서는 pybithumb.get_current_price('ALL')와 pybithumb.get_orderbook("ALL")을 통해 전체 자산의 데이터를 5초마다 수신
+
+[2] data provider에서는 시뮬레이션 mode 일때 위 수신한 데이터를 자산별로 SQLite에 저장
+
+[3] strategy에서는 5초마다 수신한 pybithumb.get_current_price("ALL") 데이터 중 closing_price의 5초전 금액 대비 증가율(price_rate)을 계산
+
+과 이 모두 양의 값을 가지면서 moving average를 계산 (40초간 10초 간격 3구간)
+
+[4] strategy에서는 5초마다 수신한 pybithumb.get_current_price("ALL") 데이터 중 units_traded의 5초전 수량 대비 증가율(units_rate)을 계산
+
+[5] strategy에서는 20초간 5초 간격 3구간을 windowing 해 가면서 price_rate 와 units_rate가 모두 양의 값을 가지면서, moving average 값이 큰 상위 n개 자산을 선정(n의 max가 4개 이며, 이에 못 미치는 경우도 있을 수 있음)하여 pocket에 저장
+
+[6] 위 [1]부터 [5]까지의 과정은 계속 반복
+
+[7] trader에서는 strategy에서 제공한 상위 n개 자산 중 첫번째 자산에 대해 투입금액 / n 한 금액으로 시장가 매수 진행(매수금액). 10초이내 시장가 매수가 완료되지 않으면 매수 요청 취소
+
+[8] trader에서는 현재가(가장최근의 closing_price)가 매수금액 대비 증감율을 계산
+
+[9] 위 증감율이 -3%가 되면 시장가 매도 진행
+
+[10] 매수 요청이 나간 자산은 pocket에서 제외
+
+[11] 나머지 자산에 대해서도 위 [7]부터 [9]까지의 과정을 반복하되, threading과 class Worker를 이용하여 병렬처리 수행. pocket 내 순위 승진하며 위 [5]에서 정보 수령
+
+ㅇ operator에서 텔레그램으로 위 [5], [7], [9], [11] 단계 정보를 축약하여 전송
+
+ㅇ 전체 스타일은 https://github.com/msaltnet/smtm.git을 참고하되 축약하여 구현
+
+
+---------------------------------------
+db의 timestamp 시간을 korean time으로 변경
+
+log 폴더를 생성하고, 화면으로 출력되는 모든 로그 기록을 text 파일에도 기록
+
+매도 요청과 취소 요청도 로그에 출력
+
+pocket에 들어있었던 자산이 모두 매도되거나 거래 취소되면 다음 pocket 채우기 작업 진행
+
+ -------------------------------------
+
+종목별 손절 -0.3%, 익절 1%
+
+"Trading in progress:" 로그에 각 종목별 현재가도 함께 출력 (예시> XRP 1,205, BTC 125,000,000 등)
+
+[ERROR] Operator: Failed to send telegram message: There is no current event loop in thread 'Thread-3'. 에러 해소
+
+새로 시작할때 마다 smtm_data.db 의 데이터 전부 삭제(초기화)
+
+로그 기록 text 파일의 사이즈가 2 Mb가 넘으면 추가 파일을 생성하여 기록
+
+---------------------------------------
+
+parser.add_argument 로 --fee 정보를 받고, 이를 매수 수량, 매도 금액 수익률 산정에 반영
+
+budget을 max number of tickers to trade (n)으로 나누어 각 자산 매수금액으로 활용
+
+매수한 자산이 1분이상 익절/손절 기준에 충족하지 않으면 매도
+
+[ERROR] Operator: Failed to send telegram message: Not Found 에러 해소
+
+----------------------------------------
+
+--fee 정보를 % 단위로 입력할 수 있게 변경 (0.0004 -> 0.04)
+
+smtm_ ... .log 파일과 별개로, pocket 에 포함될 자산을 계산하는 과정이 담긴 로그 파일을 생성(pocket_.... .log)
+ 
+-------------------------------------------
+
+[ERROR] Operator: Failed to send telegram message: Unknown error in HTTP implementation: RuntimeError('Event loop is closed') 에러 해소
+
+로그기록 및 텔레그램 메시지에 ① sim과 live 구분자 표시, ② pocket 별 회차 표시
+
+전체 누적수익율이 -5% 도달시 프로그램 강제 종료 및 텔레그램 알림(budget, 현재잔액, 수익률, 전체 수수료총액, 전체 pocket 회차, 수익 회차, 손실회차)
+
+-----------------------------------------------
+
+--msg 인자를 추가하여 거래 진행 상황을 텔레그램으로 전송할지를 결정(default는 yes)
+
+
+
+*************************************
+본 프로젝트의 거래전략을 정리해서 알려줘.
+수익률을 개선하기 위하여 개선할 수 있는 최적화 방안을 smtm_data.db와 로그파일(smtm, pocket)의 내용을 분석하여 거래전략 사항 별로 알려줘.
+*************************************
+
+위 "추천 분석 순서"의 2번 내용에 대해서도 분석을 수행해줘.
+
+
+Process WebSocketManager-1:
+Traceback (most recent call last):
+  File "C:\Python314\Lib\multiprocessing\process.py", line 320, in _bootstrap
+    self.run()
+    ~~~~~~~~^^
+  File "C:\PJT_SMTM\Lib\site-packages\pybithumb\websocket.py", line 70, in run
+    self.__aloop = asyncio.get_event_loop()
+                   ~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Python314\Lib\asyncio\events.py", line 715, in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+                       % threading.current_thread().name)
+RuntimeError: There is no current event loop in thread 'MainThread'.
+
+
+
