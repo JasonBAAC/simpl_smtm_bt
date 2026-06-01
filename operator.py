@@ -185,7 +185,7 @@ class Operator:
                             status.append(f"{t} {float(p):,.0f}")
                         self.logger.info(f"Status: {len(active_tickers)} active ({', '.join(status)}). Value: {snapshot['total_value']:,.0f} ({snapshot['return_rate']:.2f}%)")
 
-                if time.time() - last_report_time > 3600:
+                if time.time() - last_report_time > 600:
                     self.send_notification(self.analyzer.get_report(self.round_count))
                     last_report_time = time.time()
                 time.sleep(5)
