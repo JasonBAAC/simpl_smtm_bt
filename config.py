@@ -16,5 +16,5 @@ def get_bithumb_instance():
 
 if __name__ == "__main__":
     print("Bithumb API configuration helper.")
-    # b = get_bithumb_instance()
-    # print(b.get_balance("BTC"))
+    b = get_bithumb_instance()
+    print(b.get_balance("BTC"))
