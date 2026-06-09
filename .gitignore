@@ -7,6 +7,7 @@ env/
 .env/
 Include/
 Lib/
+lib/
 Scripts/
 bin/
 
